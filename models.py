@@ -145,28 +145,28 @@ class DPRNN(nn.Module):
                                     )
 
     def forward(self, input):
-        # input shape: batch, N, dim1, dim2
-        # apply RNN on dim1 first and then dim2
-        # output shape: B, output_size, dim1, dim2
+        # input shape: batch, N, K, S
+        # apply RNN on K first and then S
+        # output shape: B, output_size, K, S
         #input = input.to(device)
-        batch_size, _, dim1, dim2 = input.shape
+        batch_size, _, K, S = input.shape
         output = input
         for i in range(len(self.row_rnn)):
-            row_input = output.permute(0, 3, 2, 1).contiguous().view(batch_size * dim2, dim1, -1)  # B*dim2, dim1, N
-            row_output = self.row_rnn[i](row_input)  # B*dim2, dim1, H
-            row_output = row_output.view(batch_size, dim2, dim1, -1).permute(0, 3, 2,
-                                                                             1).contiguous()  # B, N, dim1, dim2
+            row_input = output.permute(0, 3, 2, 1).contiguous().view(batch_size * S, K, -1)  # B*S, K, N
+            row_output = self.row_rnn[i](row_input)  # B*S, K, N
+            row_output = row_output.view(batch_size, S, K, -1).permute(0, 3, 2,
+                                                                             1).contiguous()  # B, N, K, S
             row_output = self.row_norm[i](row_output)
             output = output + row_output
 
-            col_input = output.permute(0, 2, 3, 1).contiguous().view(batch_size * dim1, dim2, -1)  # B*dim1, dim2, N
-            col_output = self.col_rnn[i](col_input)  # B*dim1, dim2, H
+            col_input = output.permute(0, 2, 3, 1).contiguous().view(batch_size * dim1, dim2, -1)  # B*K, S, N
+            col_output = self.col_rnn[i](col_input)  # B*K, S, N
             col_output = col_output.view(batch_size, dim1, dim2, -1).permute(0, 3, 1,
-                                                                             2).contiguous()  # B, N, dim1, dim2
+                                                                             2).contiguous()  # B, N, K, S
             col_output = self.col_norm[i](col_output)
             output = output + col_output
 
-        output = self.output(output) # B, output_size, dim1, dim2
+        output = self.output(output) # B, output_size, K, S
 
         return output
 
@@ -259,24 +259,24 @@ class BF_module(DPRNN_base):
 
     def forward(self, input):
         #input = input.to(device)
-        # input: (B, E, T)
-        batch_size, E, seq_length = input.shape
+        # input: (B, N, L)
+        batch_size, _, seq_length = input.shape
 
-        enc_feature = self.BN(input) # (B, E, L)-->(B, N, L)
+        # enc_feature = self.BN(input) # (B, E, L)-->(B, N, L)
         # split the encoder output into overlapped, longer segments
-        enc_segments, enc_rest = self.split_feature(enc_feature, self.segment_size)  # B, N, L, K: L is the segment_size
+        enc_segments, enc_rest = self.split_feature(input, self.segment_size)  # B, N, K, S (K is the segment_size, S is segment number) 
         #print('enc_segments.shape {}'.format(enc_segments.shape))
         # pass to DPRNN
         output = self.DPRNN(enc_segments).view(batch_size * self.num_spk, self.feature_dim, self.segment_size,
-                                                   -1)  # B*nspk, N, L, K
+                                                   -1)  # B*nspk, N, K, S
 
         # overlap-and-add of the outputs
-        output = self.merge_feature(output, enc_rest)  # B*nspk, N, T
+        output = self.merge_feature(output, enc_rest)  # B*nspk, N, L
 
         # gated output layer for filter generation
-        bf_filter = self.output(output) * self.output_gate(output)  # B*nspk, K, T
+        bf_filter = self.output(output) * self.output_gate(output)  # B*nspk, N, L
         bf_filter = bf_filter.transpose(1, 2).contiguous().view(batch_size, self.num_spk, -1,
-                                                                self.feature_dim)  # B, nspk, T, N
+                                                                self.feature_dim)  # B, nspk, L, N
 
         return bf_filter
 
@@ -340,7 +340,7 @@ class FaSNet_base(nn.Module):
 
         score_ = self.enc_LN(mixture_w) # B, E, L
         #print('mixture_w.shape {}'.format(mixture_w.shape))
-        score_ = self.separator(score_)  # B, nspk, T, N
+        score_ = self.separator(score_)  # B, nspk, L, N
         #print('score_.shape {}'.format(score_.shape))
         score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, L
         #print('score_.shape {}'.format(score_.shape))

@@ -342,7 +342,7 @@ class FaSNet_base(nn.Module):
         #print('mixture_w.shape {}'.format(mixture_w.shape))
         score_ = self.separator(score_)  # B, nspk, T, N
         #print('score_.shape {}'.format(score_.shape))
-        score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, T
+        score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, L
         #print('score_.shape {}'.format(score_.shape))
         score = self.mask_conv1x1(score_)  # [B*nspk, N, L] -> [B*nspk, E, L]
         #print('score.shape {}'.format(score.shape))
